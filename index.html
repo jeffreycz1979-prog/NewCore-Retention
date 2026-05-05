@@ -559,13 +559,42 @@ function renderOverviewFromTermData(data) {
       }).join('');
 
   // 需關懷
+  // 需關懷班級（含詳細資訊）
   const careList = document.getElementById('care-list');
   const careArr  = data.needCare || [];
-  careList.innerHTML = careArr.length === 0
-    ? '<div class="empty-state"><div class="empty-state-icon">✅</div><p>目前所有班級均正常</p></div>'
-    : careArr.map(function(name) {
-        return '<div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;align-items:center;gap:8px;"><span style="color:var(--warn)">▲</span>' + name + '</div>';
-      }).join('');
+
+  if (careArr.length === 0) {
+    careList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">✅</div><p>目前所有班級均正常</p></div>';
+  } else {
+    // 從 _classes 或 bySystem 裡找班級詳細資料
+    var classMap = {};
+    (_classes || []).forEach(function(c) { classMap[c.className] = c; });
+    // 歸檔學期從 bySystem 裡找不到，嘗試從 data.classes 找
+    (data.classes || []).forEach(function(c) { classMap[c.className] = c; });
+
+    careList.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">' +
+      careArr.map(function(name) {
+        var c = classMap[name] || {};
+        var rate    = c.rate !== null && c.rate !== undefined ? c.rate + '%' : '—';
+        var total   = c.total   !== undefined ? c.total   : '—';
+        var lost    = c.lost    !== undefined ? c.lost    : '—';
+        var localT  = c.localT  || '—';
+        var foreignT= c.foreignT|| '—';
+        return '<div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.25);border-radius:8px;padding:14px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
+          '<span style="color:var(--warn)">⚠️</span>' +
+          '<span style="font-family:var(--mono);font-size:13px;font-weight:500">' + name + '</span>' +
+          '<span style="margin-left:auto;font-family:var(--mono);font-size:16px;color:var(--warn);font-weight:600">' + rate + '</span>' +
+          '</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;color:var(--muted);">' +
+          '<div>中師：<span style="color:var(--text)">' + localT + '</span></div>' +
+          '<div>外師：<span style="color:var(--text)">' + foreignT + '</span></div>' +
+          '<div>原班：<span style="color:var(--text)">' + total + ' 人</span></div>' +
+          '<div>流失：<span style="color:var(--warn)">' + lost + ' 人</span></div>' +
+          '</div>' +
+          '</div>';
+      }).join('') + '</div>';
+  }
 
   // 流失原因圓餅圖
   renderReasonPie(data.reasons || []);
