@@ -224,7 +224,15 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
 
   <!-- 流失 -->
   <div class="page" id="page-loss">
-    <div class="card">
+    <!-- 學期切換列 -->
+    <div class="filter-row" style="margin-bottom:16px;align-items:center;">
+      <div style="font-size:11px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;white-space:nowrap">查看學期</div>
+      <select class="filter-select" id="loss-term-select" onchange="onLossTermChange()" style="min-width:110px"></select>
+      <div id="loss-readonly-badge" style="display:none;padding:4px 10px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);border-radius:4px;font-size:11px;color:var(--amber)">📦 歸檔資料（唯讀）</div>
+    </div>
+
+    <!-- 新增表單（當季才顯示）-->
+    <div class="card" id="loss-add-form">
       <div class="card-title">新增流失紀錄</div>
       <div class="form-grid">
         <div class="form-group">
@@ -272,6 +280,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
       </div>
       <button class="btn-add" id="add-loss-btn" onclick="addLossRecord()">＋ 新增紀錄</button>
     </div>
+    </div><!-- end loss-add-form -->
 
     <div class="filter-row">
       <input  class="filter-input"  id="loss-search"        placeholder="搜尋學生或班級..." oninput="renderLossRecords()">
@@ -285,6 +294,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
 
   <!-- 老師 -->
   <div class="page" id="page-teachers">
+    <div class="filter-row" style="margin-bottom:16px;align-items:center;">
+      <div style="font-size:11px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;white-space:nowrap">查看學期</div>
+      <select class="filter-select" id="teacher-term-select" onchange="onTeacherTermChange()" style="min-width:110px"></select>
+    </div>
     <div id="teacher-grid-wrap"><div class="loading"><div class="spinner"></div> 載入中...</div></div>
   </div>
 </div>
@@ -293,11 +306,15 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
 
 <script>
 // ══ 設定 ══
-const GAS_URL = 'https://script.google.com/macros/s/AKfycby0djqDbqva7sWYGaJanCcisd3Pv6Iwe7-ZKvRq_jaeE19jP5HaIMMeHmo-hkmwd2gfTg/exec';
+const GAS_URL = 'https://script.google.com/macros/s/YOUR_RETENTION_GAS_DEPLOY_ID/exec';
 // ↑ 換成你的續讀 GAS 部署網址
 
 // ══ 狀態 ══
 let _pw = '', _role = '', _classes = [], _loss = [], _teachers = [], _term = '';
+let _archivedTerms = [];   // 所有歸檔學期清單
+let _lossCurrentSeason = []; // 當季流失備份
+let _lossTerm = '';        // 流失頁目前顯示的學期（空=當季）
+let _teacherTerm = '';     // 老師頁目前顯示的學期（空=當季）
 
 // ══ JSONP ══
 function callGAS(params) {
@@ -379,11 +396,12 @@ function showPage(name, btn) {
 // ══ 載入資料 ══
 async function loadAllData() {
   try {
-    const [mainRes, summaryRes, lossRes, teacherRes] = await Promise.all([
+    const [mainRes, summaryRes, lossRes, teacherRes, termsRes] = await Promise.all([
       callGAS({ action: 'getMainData',         password: _pw }),
       callGAS({ action: 'getRetentionSummary', password: _pw }),
       callGAS({ action: 'getLossRecords',      password: _pw }),
       callGAS({ action: 'getTeacherStats',     password: _pw }),
+      callGAS({ action: 'getArchivedTerms',    password: _pw }),
     ]);
 
     if (mainRes.ok) {
@@ -399,6 +417,7 @@ async function loadAllData() {
 
     if (lossRes.ok) {
       _loss = lossRes.records;
+      _lossCurrentSeason = lossRes.records; // 備份當季資料
       initLossFilters();
       renderLossRecords();
     }
@@ -407,6 +426,12 @@ async function loadAllData() {
       _teachers = teacherRes.teachers;
       renderTeachers();
     }
+
+    if (termsRes && termsRes.ok) {
+      _archivedTerms = termsRes.terms || [];
+    }
+    initTermSelects();
+
   } catch(e) {
     showToast('載入失敗：' + e.message, 'err');
   }
@@ -492,6 +517,88 @@ function renderClasses() {
     }).join('') +
     '</tbody></table>' +
     '<div style="padding:12px 0 0;font-size:11px;color:var(--muted)">顯示 ' + filtered.length + ' / ' + _classes.length + ' 班（依結束日期排列）</div>';
+}
+
+// ══ 學期切換 ══
+
+function initTermSelects() {
+  // 流失頁學期選單
+  const lossTermSel = document.getElementById('loss-term-select');
+  lossTermSel.innerHTML = '<option value="">當季 ' + _term + '</option>' +
+    _archivedTerms.slice().reverse().map(function(t) {
+      return '<option value="' + t + '">' + t + ' （歸檔）</option>';
+    }).join('');
+  _lossTerm = '';
+
+  // 老師頁學期選單
+  const teacherTermSel = document.getElementById('teacher-term-select');
+  teacherTermSel.innerHTML = '<option value="">當季 ' + _term + '</option>' +
+    _archivedTerms.slice().reverse().map(function(t) {
+      return '<option value="' + t + '">' + t + ' （歸檔）</option>';
+    }).join('');
+  _teacherTerm = '';
+}
+
+async function onLossTermChange() {
+  const sel   = document.getElementById('loss-term-select');
+  const term  = sel.value;
+  _lossTerm   = term;
+  const badge = document.getElementById('loss-readonly-badge');
+  const form  = document.getElementById('loss-add-form');
+
+  if (!term) {
+    // 切回當季
+    badge.style.display = 'none';
+    form.style.display  = 'block';
+    _loss = _lossCurrentSeason;
+    initLossFilters();
+    renderLossRecords();
+    return;
+  }
+
+  // 切到歸檔
+  badge.style.display = 'inline-block';
+  form.style.display  = 'none';
+  document.getElementById('loss-table-wrap').innerHTML = '<div class="loading"><div class="spinner"></div> 載入 ' + term + ' 資料...</div>';
+
+  try {
+    const res = await callGAS({ action: 'getArchivedLossRecords', password: _pw, term: term });
+    if (res.ok) {
+      _loss = res.records;
+      initLossFilters();
+      renderLossRecords();
+    } else {
+      document.getElementById('loss-table-wrap').innerHTML = '<div class="empty-state"><div class="empty-state-icon">📦</div><p>' + (res.error || '載入失敗') + '</p></div>';
+    }
+  } catch(e) {
+    showToast('載入失敗：' + e.message, 'err');
+  }
+}
+
+async function onTeacherTermChange() {
+  const sel  = document.getElementById('teacher-term-select');
+  const term = sel.value;
+  _teacherTerm = term;
+
+  if (!term) {
+    // 切回當季
+    renderTeachers();
+    return;
+  }
+
+  // 切到歸檔：讀取 XXX_Main 的老師資料
+  document.getElementById('teacher-grid-wrap').innerHTML = '<div class="loading"><div class="spinner"></div> 載入 ' + term + ' 資料...</div>';
+
+  try {
+    const res = await callGAS({ action: 'getArchivedMainData', password: _pw, term: term });
+    if (res.ok) {
+      renderTeachersFromMain(res.classes, term, res.overall);
+    } else {
+      document.getElementById('teacher-grid-wrap').innerHTML = '<div class="empty-state"><div class="empty-state-icon">📦</div><p>' + (res.error || '載入失敗') + '</p></div>';
+    }
+  } catch(e) {
+    showToast('載入失敗：' + e.message, 'err');
+  }
 }
 
 // ══ 流失 ══
@@ -609,14 +716,59 @@ async function deleteLoss(rowIndex, btnEl) {
 }
 
 // ══ 老師 ══
+
+/**
+ * 從歸檔 Main 的班級資料，計算並渲染老師統計（用於跨季切換）
+ */
+function renderTeachersFromMain(classes, term, overall) {
+  const wrap = document.getElementById('teacher-grid-wrap');
+  if (!classes || !classes.length) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📦</div><p>' + term + ' 沒有班級資料</p></div>';
+    return;
+  }
+
+  // 從班級資料整理老師統計
+  const teacherMap = {};
+  classes.forEach(function(c) {
+    [{ name: c.localT }, { name: c.foreignT }].forEach(function(t) {
+      if (!t.name) return;
+      if (!teacherMap[t.name]) teacherMap[t.name] = { total: 0, lost: 0, classes: [] };
+      teacherMap[t.name].total  += c.total;
+      teacherMap[t.name].lost   += c.lost;
+      teacherMap[t.name].classes.push(c.className);
+    });
+  });
+
+  const teachers = Object.keys(teacherMap).sort().map(function(name) {
+    const d    = teacherMap[name];
+    const rate = d.total > 0 ? Math.round((d.total - d.lost) / d.total * 1000) / 10 : null;
+    return { name: name, currentRate: rate, currentClasses: d.classes, history: {} };
+  });
+
+  // 整體回收率 banner
+  const banner = '<div style="margin-bottom:16px;padding:16px 20px;background:var(--surface);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;gap:16px;">' +
+    '<div style="font-size:11px;letter-spacing:1px;color:var(--muted);text-transform:uppercase">' + term + ' 整體回收率</div>' +
+    '<div style="font-family:var(--mono);font-size:28px;color:' + ((overall||0) < 80 ? 'var(--warn)' : 'var(--accent2)') + ';font-weight:500">' + (overall !== null ? overall + '%' : '—') + '</div>' +
+    '</div>';
+
+  wrap.innerHTML = banner + renderTeacherCards(teachers, term);
+}
+
 function renderTeachers() {
   const wrap = document.getElementById('teacher-grid-wrap');
   if (!_teachers.length) {
     wrap.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><p>尚無老師資料</p></div>';
     return;
   }
+  wrap.innerHTML = renderTeacherCards(_teachers, '');
+}
 
-  wrap.innerHTML = '<div class="teacher-grid">' + _teachers.map(function(t) {
+function renderTeacherCards(teachers, termLabel) {
+  if (!teachers || !teachers.length) {
+    return '<div class="empty-state"><div class="empty-state-icon">👥</div><p>尚無老師資料</p></div>';
+  }
+
+  return '<div class="teacher-grid">' + teachers.map(function(t) {
     const rate    = t.currentRate;
     const rateStr = rate !== null ? rate + '%' : '—';
     const isWarn  = rate !== null && rate < 80;
