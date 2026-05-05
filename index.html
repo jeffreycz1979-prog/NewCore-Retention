@@ -609,10 +609,28 @@ function renderReasonPie(reasons) {
 
   if (_chartPie) { _chartPie.destroy(); _chartPie = null; }
 
+  // 用 overlay 顯示空白狀態，不破壞 canvas 元素
+  var emptyOverlay = ctx.parentElement.querySelector('.pie-empty');
+  if (!emptyOverlay) {
+    emptyOverlay = document.createElement('div');
+    emptyOverlay.className = 'pie-empty empty-state';
+    emptyOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;display:none;padding:30px';
+    emptyOverlay.innerHTML = '<div class="empty-state-icon">📋</div><p>尚無流失資料</p>';
+    ctx.parentElement.appendChild(emptyOverlay);
+  }
+
   if (!reasons || reasons.length === 0) {
-    ctx.parentElement.innerHTML = '<div class="empty-state" style="padding:40px"><div class="empty-state-icon">📋</div><p>尚無流失資料</p></div>';
+    ctx.style.display = 'none';
+    emptyOverlay.style.display = 'flex';
+    emptyOverlay.style.flexDirection = 'column';
+    emptyOverlay.style.alignItems = 'center';
+    emptyOverlay.style.justifyContent = 'center';
+    document.getElementById('reason-legend').innerHTML = '';
     return;
   }
+
+  ctx.style.display = 'block';
+  emptyOverlay.style.display = 'none';
 
   _chartPie = new Chart(ctx, {
     type: 'doughnut',
