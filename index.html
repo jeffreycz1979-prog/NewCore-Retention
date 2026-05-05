@@ -679,12 +679,34 @@ async function renderCompareCharts() {
   const selected   = Array.from(checkboxes).filter(function(cb) { return cb.checked; }).map(function(cb) { return cb.value; });
 
   if (selected.length === 0) {
+    if (_chartRate) { _chartRate.destroy(); _chartRate = null; }
+    if (_chartLoss) { _chartLoss.destroy(); _chartLoss = null; }
     ['compare-rate-chart','compare-loss-chart'].forEach(function(id) {
       var c = document.getElementById(id);
-      if (c) c.parentElement.innerHTML = '<div class="empty-state" style="padding:30px"><p>請選擇學期</p></div>';
+      if (c) {
+        c.style.display = 'none';
+        var p = c.parentElement.querySelector('.cmp-empty');
+        if (!p) {
+          p = document.createElement('div');
+          p.className = 'cmp-empty empty-state';
+          p.style.cssText = 'padding:30px';
+          p.innerHTML = '<p>請選擇學期</p>';
+          c.parentElement.appendChild(p);
+        }
+        p.style.display = 'block';
+      }
     });
     return;
   }
+  // 確保 canvas 可見
+  ['compare-rate-chart','compare-loss-chart'].forEach(function(id) {
+    var c = document.getElementById(id);
+    if (c) {
+      c.style.display = 'block';
+      var p = c.parentElement.querySelector('.cmp-empty');
+      if (p) p.style.display = 'none';
+    }
+  });
 
   // 載入還沒快取的學期
   await Promise.all(selected.map(async function(t) {
