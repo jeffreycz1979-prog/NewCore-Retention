@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NewCore 續讀分析</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -190,17 +191,56 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
 
   <!-- 總覽 -->
   <div class="page active" id="page-overview">
+    <!-- 學期切換 -->
+    <div class="filter-row" style="margin-bottom:20px;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div style="font-size:11px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;white-space:nowrap">查看學期</div>
+      <select class="filter-select" id="overview-term-select" onchange="onOverviewTermChange()" style="min-width:110px"></select>
+      <div id="overview-readonly-badge" style="display:none;padding:4px 10px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);border-radius:4px;font-size:11px;color:var(--amber)">📦 歸檔資料</div>
+    </div>
+
+    <!-- KPI -->
     <div class="kpi-grid" id="kpi-grid">
       <div class="loading"><div class="spinner"></div> 載入中...</div>
     </div>
-    <div class="overview-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+    <!-- 主圖表區 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;" class="overview-grid">
       <div class="card">
         <div class="card-title">體系回收率</div>
         <div id="sys-chart"><div class="loading"><div class="spinner"></div></div></div>
       </div>
       <div class="card">
-        <div class="card-title">⚠️ 需關懷班級</div>
-        <div id="care-list"><div class="loading"><div class="spinner"></div></div></div>
+        <div class="card-title">流失原因分析</div>
+        <div style="position:relative;height:220px;">
+          <canvas id="reason-pie-chart"></canvas>
+        </div>
+        <div id="reason-legend" style="margin-top:12px;font-size:12px;"></div>
+      </div>
+    </div>
+
+    <!-- 需關懷班級 -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-title">⚠️ 需關懷班級</div>
+      <div id="care-list"><div class="loading"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- 跨學期比較 -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+        <div class="card-title" style="margin-bottom:0">📊 跨學期比較</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;" id="compare-term-checkboxes">
+          <div style="font-size:11px;color:var(--muted)">選擇學期：</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="overview-grid">
+        <div>
+          <div style="font-size:11px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:12px">回收率趨勢</div>
+          <div style="position:relative;height:200px;"><canvas id="compare-rate-chart"></canvas></div>
+        </div>
+        <div>
+          <div style="font-size:11px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:12px">流失人數比較</div>
+          <div style="position:relative;height:200px;"><canvas id="compare-loss-chart"></canvas></div>
+        </div>
       </div>
     </div>
   </div>
@@ -312,6 +352,11 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycby0djqDbqva7sWYGaJanCci
 // ══ 狀態 ══
 let _pw = '', _role = '', _classes = [], _loss = [], _teachers = [], _term = '';
 let _archivedTerms = [];   // 所有歸檔學期清單
+let _overviewTerm  = '';   // 總覽頁當前學期
+let _overviewData  = {};   // 各學期摘要快取 { '114-2': {...}, 'current': {...} }
+let _chartPie      = null; // 圓餅圖實例
+let _chartRate     = null; // 回收率折線圖實例
+let _chartLoss     = null; // 流失人數長條圖實例
 let _lossCurrentSeason = []; // 當季流失備份
 let _lossTerm = '';        // 流失頁目前顯示的學期（空=當季）
 let _teacherTerm = '';     // 老師頁目前顯示的學期（空=當季）
@@ -413,7 +458,10 @@ async function loadAllData() {
       initLossForm();
     }
 
-    if (summaryRes.ok) renderOverview(summaryRes);
+    if (summaryRes.ok) {
+      _overviewData['current'] = summaryRes;
+      renderOverview(summaryRes);
+    }
 
     if (lossRes.ok) {
       _loss = lossRes.records;
@@ -438,30 +486,232 @@ async function loadAllData() {
 }
 
 // ══ 總覽 ══
+
+// Chart.js 全域設定（深色主題）
+Chart.defaults.color = '#64748b';
+Chart.defaults.borderColor = '#2a2d3a';
+
+const CHART_COLORS = ['#4f8ef7','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#38bdf8','#4ade80','#f472b6','#facc15'];
+
+async function onOverviewTermChange() {
+  const term = document.getElementById('overview-term-select').value;
+  _overviewTerm = term;
+  const badge = document.getElementById('overview-readonly-badge');
+  badge.style.display = term ? 'inline-block' : 'none';
+
+  if (!term) {
+    // 當季
+    if (_overviewData['current']) renderOverview(_overviewData['current']);
+    return;
+  }
+
+  // 歸檔
+  if (_overviewData[term]) { renderOverviewFromTermData(_overviewData[term]); return; }
+  document.getElementById('kpi-grid').innerHTML = '<div class="loading"><div class="spinner"></div> 載入 ' + term + '...</div>';
+  try {
+    const res = await callGAS({ action: 'getOverviewByTerm', password: _pw, term: term });
+    if (res.ok) { _overviewData[term] = res; renderOverviewFromTermData(res); }
+    else showToast(res.error || '載入失敗', 'err');
+  } catch(e) { showToast('連線失敗', 'err'); }
+}
+
 function renderOverview(data) {
+  // 從 getRetentionSummary 格式轉換成 getOverviewByTerm 格式
+  var termData = {
+    term       : data.term || _term,
+    isCurrent  : true,
+    classCount : _classes.length,
+    grandTotal : data.grandTotal,
+    grandLost  : data.grandLost,
+    lossCount  : data.grandLost,
+    overall    : data.overall,
+    lossRate   : data.grandTotal > 0 ? Math.round(data.grandLost / data.grandTotal * 1000) / 10 : null,
+    reasons    : [],
+    bySystem   : data.bySystem,
+    needCare   : data.needCare,
+  };
+  _overviewData['current'] = Object.assign({}, data, termData);
+  renderOverviewFromTermData(_overviewData['current']);
+}
+
+function renderOverviewFromTermData(data) {
+  // KPI
   document.getElementById('kpi-grid').innerHTML =
-    kpiCard('blue',  '全校回收率',  data.overall !== null ? data.overall + '%' : '—', data.grandTotal + ' 人中 ' + (data.grandTotal - data.grandLost) + ' 人回收') +
-    kpiCard(data.needCare.length > 0 ? 'red' : 'green', '需關懷班級', data.needCare.length, data.needCare.length > 0 ? '回收率低於 80%' : '全部正常') +
-    kpiCard('amber', '總班級數', _classes.length, '當季 ' + _term) +
+    kpiCard('blue',  '全校回收率', data.overall !== null ? data.overall + '%' : '—',
+      data.grandTotal + ' 人中 ' + (data.grandTotal - data.grandLost) + ' 人回收') +
+    kpiCard((data.needCare && data.needCare.length > 0) ? 'red' : 'green', '需關懷班級',
+      data.needCare ? data.needCare.length : '—',
+      (data.needCare && data.needCare.length > 0) ? '回收率低於 80%' : '全部正常') +
+    kpiCard('amber', '總班級數', data.classCount || '—', data.term || _term) +
     kpiCard('green', '流失人數', data.grandLost, '本季累計');
 
+  // 體系圖
   const sysChart = document.getElementById('sys-chart');
-  sysChart.innerHTML = data.bySystem.length === 0
+  const sysList  = data.bySystem || [];
+  sysChart.innerHTML = sysList.length === 0
     ? '<div class="empty-state"><div class="empty-state-icon">📊</div><p>尚無體系資料</p></div>'
-    : data.bySystem.map(function(s) {
+    : sysList.map(function(s) {
         return '<div class="sys-row">' +
           '<div class="sys-name">' + s.system + '</div>' +
-          '<div class="sys-bar-wrap"><div class="sys-bar" style="width:' + (s.rate || 0) + '%"></div></div>' +
-          '<div class="sys-rate" style="color:' + ((s.rate||0) < 80 ? 'var(--warn)' : 'var(--text)') + '">' + (s.rate !== null ? s.rate + '%' : '—') + '</div>' +
+          '<div class="sys-bar-wrap"><div class="sys-bar" style="width:' + (s.rate||0) + '%"></div></div>' +
+          '<div class="sys-rate" style="color:' + ((s.rate||0)<80?'var(--warn)':'var(--text)') + '">' + (s.rate!==null?s.rate+'%':'—') + '</div>' +
           '</div>';
       }).join('');
 
+  // 需關懷
   const careList = document.getElementById('care-list');
-  careList.innerHTML = data.needCare.length === 0
+  const careArr  = data.needCare || [];
+  careList.innerHTML = careArr.length === 0
     ? '<div class="empty-state"><div class="empty-state-icon">✅</div><p>目前所有班級均正常</p></div>'
-    : data.needCare.map(function(name) {
+    : careArr.map(function(name) {
         return '<div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;align-items:center;gap:8px;"><span style="color:var(--warn)">▲</span>' + name + '</div>';
       }).join('');
+
+  // 流失原因圓餅圖
+  renderReasonPie(data.reasons || []);
+
+  // 跨學期比較圖
+  renderCompareCharts();
+}
+
+function renderReasonPie(reasons) {
+  const ctx = document.getElementById('reason-pie-chart');
+  if (!ctx) return;
+
+  if (_chartPie) { _chartPie.destroy(); _chartPie = null; }
+
+  if (!reasons || reasons.length === 0) {
+    ctx.parentElement.innerHTML = '<div class="empty-state" style="padding:40px"><div class="empty-state-icon">📋</div><p>尚無流失資料</p></div>';
+    return;
+  }
+
+  _chartPie = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: reasons.map(function(r) { return r.reason; }),
+      datasets: [{
+        data: reasons.map(function(r) { return r.count; }),
+        backgroundColor: CHART_COLORS,
+        borderColor: '#1a1d27',
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              var total = ctx.dataset.data.reduce(function(a,b){return a+b;},0);
+              var pct   = Math.round(ctx.parsed / total * 100);
+              return ctx.label + ': ' + ctx.parsed + '人 (' + pct + '%)';
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // 自訂圖例
+  document.getElementById('reason-legend').innerHTML = reasons.map(function(r, i) {
+    var total = reasons.reduce(function(a,b){return a+b.count;},0);
+    var pct   = Math.round(r.count/total*100);
+    return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">' +
+      '<div style="width:10px;height:10px;border-radius:2px;background:' + CHART_COLORS[i % CHART_COLORS.length] + ';flex-shrink:0"></div>' +
+      '<span style="color:var(--text)">' + r.reason + '</span>' +
+      '<span style="color:var(--muted);margin-left:auto">' + r.count + '人 ' + pct + '%</span>' +
+      '</div>';
+  }).join('');
+}
+
+async function renderCompareCharts() {
+  // 取得勾選的學期
+  const checkboxes = document.querySelectorAll('#compare-term-checkboxes input[type=checkbox]');
+  const selected   = Array.from(checkboxes).filter(function(cb) { return cb.checked; }).map(function(cb) { return cb.value; });
+
+  if (selected.length === 0) {
+    ['compare-rate-chart','compare-loss-chart'].forEach(function(id) {
+      var c = document.getElementById(id);
+      if (c) c.parentElement.innerHTML = '<div class="empty-state" style="padding:30px"><p>請選擇學期</p></div>';
+    });
+    return;
+  }
+
+  // 載入還沒快取的學期
+  await Promise.all(selected.map(async function(t) {
+    if (!_overviewData[t]) {
+      try {
+        var res = await callGAS({ action: 'getOverviewByTerm', password: _pw, term: t });
+        if (res.ok) _overviewData[t] = res;
+      } catch(e) {}
+    }
+  }));
+
+  // 排序：舊到新
+  var sorted = selected.slice().sort(function(a, b) {
+    var ap = a.split('-'); var bp = b.split('-');
+    return (parseInt(ap[0])*10+parseInt(ap[1])) - (parseInt(bp[0])*10+parseInt(bp[1]));
+  });
+
+  var labels    = sorted;
+  var rateData  = sorted.map(function(t) { return _overviewData[t] ? _overviewData[t].overall : null; });
+  var lossData  = sorted.map(function(t) { return _overviewData[t] ? _overviewData[t].grandLost : 0; });
+  var totalData = sorted.map(function(t) { return _overviewData[t] ? _overviewData[t].grandTotal : 0; });
+
+  // 回收率折線圖
+  var rateCtx = document.getElementById('compare-rate-chart');
+  if (_chartRate) { _chartRate.destroy(); _chartRate = null; }
+  if (rateCtx) {
+    _chartRate = new Chart(rateCtx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: '回收率',
+          data: rateData,
+          borderColor: '#4f8ef7',
+          backgroundColor: 'rgba(79,142,247,0.1)',
+          pointBackgroundColor: '#4f8ef7',
+          pointRadius: 5,
+          tension: 0.3,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          y: { min: 0, max: 100, ticks: { callback: function(v) { return v + '%'; } } }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: function(c) { return c.parsed.y + '%'; } } }
+        }
+      }
+    });
+  }
+
+  // 流失人數長條圖
+  var lossCtx = document.getElementById('compare-loss-chart');
+  if (_chartLoss) { _chartLoss.destroy(); _chartLoss = null; }
+  if (lossCtx) {
+    _chartLoss = new Chart(lossCtx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: '流失人數', data: lossData,  backgroundColor: 'rgba(248,113,113,0.7)', borderRadius: 4 },
+          { label: '總人數',   data: totalData, backgroundColor: 'rgba(79,142,247,0.3)',  borderRadius: 4 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { font: { size: 11 } } } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
 }
 
 function kpiCard(cls, label, value, sub) {
@@ -522,12 +772,30 @@ function renderClasses() {
 // ══ 學期切換 ══
 
 function initTermSelects() {
-  // 流失頁學期選單
-  const lossTermSel = document.getElementById('loss-term-select');
-  lossTermSel.innerHTML = '<option value="">當季 ' + _term + '</option>' +
+  const termOptions = '<option value="">當季 ' + _term + '</option>' +
     _archivedTerms.slice().reverse().map(function(t) {
       return '<option value="' + t + '">' + t + ' （歸檔）</option>';
     }).join('');
+
+  // 總覽頁學期選單
+  document.getElementById('overview-term-select').innerHTML = termOptions;
+  _overviewTerm = '';
+
+  // 跨學期比較勾選框（預設勾選最近3個學期）
+  const checkboxWrap = document.getElementById('compare-term-checkboxes');
+  const allTerms = _archivedTerms.slice().reverse(); // 新到舊
+  const defaultChecked = allTerms.slice(0, 3);
+  checkboxWrap.innerHTML = '<div style="font-size:11px;color:var(--muted)">選擇學期：</div>' +
+    allTerms.map(function(t) {
+      const checked = defaultChecked.includes(t) ? 'checked' : '';
+      return '<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;color:var(--text)">' +
+        '<input type="checkbox" value="' + t + '" ' + checked + ' onchange="renderCompareCharts()" ' +
+        'style="accent-color:var(--accent)"> ' + t + '</label>';
+    }).join('');
+
+  // 流失頁學期選單
+  const lossTermSel = document.getElementById('loss-term-select');
+  lossTermSel.innerHTML = termOptions;
   _lossTerm = '';
 
   // 老師頁學期選單
@@ -683,8 +951,15 @@ async function addLossRecord() {
     const res = await postGAS({ action: 'addLossRecord', record: record });
     if (res.ok) {
       showToast('✅ 已新增流失紀錄 #' + res.seq, 'ok');
-      const lossRes = await callGAS({ action: 'getLossRecords', password: _pw });
-      if (lossRes.ok) { _loss = lossRes.records; initLossFilters(); renderLossRecords(); }
+      // 重新載入流失、總覽、老師資料
+      const [lossRes2, summaryRes2, teacherRes2] = await Promise.all([
+        callGAS({ action: 'getLossRecords',      password: _pw }),
+        callGAS({ action: 'getRetentionSummary', password: _pw }),
+        callGAS({ action: 'getTeacherStats',     password: _pw }),
+      ]);
+      if (lossRes2.ok)    { _loss = lossRes2.records; _lossCurrentSeason = lossRes2.records; initLossFilters(); renderLossRecords(); }
+      if (summaryRes2.ok) { _overviewData['current'] = summaryRes2; if (!_overviewTerm) renderOverview(summaryRes2); }
+      if (teacherRes2.ok) { _teachers = teacherRes2.teachers; if (!_teacherTerm) renderTeachers(); }
       document.getElementById('loss-name').value   = '';
       document.getElementById('loss-school').value = '';
       document.getElementById('loss-note').value   = '';
