@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NewCore 續讀分析</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg       : #0f1117;
+  --surface  : #1a1d27;
+  --border   : #2a2d3a;
+  --accent   : #4f8ef7;
+  --accent2  : #34d399;
+  --warn     : #f87171;
+  --amber    : #fbbf24;
+  --text     : #e2e8f0;
+  --muted    : #64748b;
+  --mono     : 'DM Mono', monospace;
+  --sans     : 'Noto Sans TC', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; font-size: 14px; }
+
+/* ── 登入 ── */
+#login-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 30% 50%, #1a2540 0%, var(--bg) 60%);
+}
+.login-box { width: 360px; padding: 48px 40px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.login-logo { font-family: var(--mono); font-size: 11px; letter-spacing: 4px; color: var(--accent); text-transform: uppercase; margin-bottom: 32px; }
+.login-title { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+.login-sub { color: var(--muted); font-size: 13px; margin-bottom: 36px; }
+.field-label { font-size: 11px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+.field-input { width: 100%; padding: 12px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 14px; outline: none; transition: border-color .2s; margin-bottom: 24px; }
+.field-input:focus { border-color: var(--accent); }
+.btn-primary { width: 100%; padding: 13px; background: var(--accent); border: none; border-radius: 8px; color: #fff; font-family: var(--sans); font-size: 14px; font-weight: 500; cursor: pointer; transition: opacity .2s; }
+.btn-primary:hover { opacity: .88; }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.login-error { margin-top: 16px; padding: 10px 14px; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3); border-radius: 6px; color: var(--warn); font-size: 13px; display: none; }
+
+/* ── App ── */
+#app { display: none; }
+.topbar { height: 56px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 24px; gap: 12px; position: sticky; top: 0; z-index: 100; }
+.topbar-brand { font-family: var(--mono); font-size: 11px; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; white-space: nowrap; }
+.topbar-term { font-family: var(--mono); font-size: 12px; color: var(--muted); padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; white-space: nowrap; }
+.topbar-role { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 4px; white-space: nowrap; }
+.role-super { background: rgba(251,191,36,.12); color: var(--amber); border: 1px solid rgba(251,191,36,.3); }
+.role-admin { background: rgba(79,142,247,.1); color: var(--accent); border: 1px solid rgba(79,142,247,.3); }
+.topbar-nav { display: flex; gap: 4px; margin-left: auto; }
+.nav-btn { padding: 7px 16px; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--muted); font-family: var(--sans); font-size: 13px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+.nav-btn:hover { color: var(--text); border-color: var(--border); }
+.nav-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(79,142,247,.08); }
+.logout-btn { padding: 6px 14px; background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 12px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+.logout-btn:hover { border-color: var(--warn); color: var(--warn); }
+
+/* ── 頁面 ── */
+.page { display: none; padding: 32px 24px; max-width: 1200px; margin: 0 auto; }
+.page.active { display: block; }
+
+/* ── 卡片 ── */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+.card-title { font-size: 11px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 16px; }
+
+/* ── KPI ── */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px 20px; position: relative; overflow: hidden; }
+.kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+.kpi-card.blue::before  { background: var(--accent); }
+.kpi-card.green::before { background: var(--accent2); }
+.kpi-card.red::before   { background: var(--warn); }
+.kpi-card.amber::before { background: var(--amber); }
+.kpi-label { font-size: 11px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; }
+.kpi-value { font-family: var(--mono); font-size: 36px; font-weight: 500; line-height: 1; margin-bottom: 6px; }
+.kpi-card.blue  .kpi-value { color: var(--accent); }
+.kpi-card.green .kpi-value { color: var(--accent2); }
+.kpi-card.red   .kpi-value { color: var(--warn); }
+.kpi-card.amber .kpi-value { color: var(--amber); }
+.kpi-sub { font-size: 12px; color: var(--muted); }
+
+/* ── 體系圖 ── */
+.sys-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.sys-name { width: 60px; font-family: var(--mono); font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.sys-bar-wrap { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.sys-bar { height: 100%; background: var(--accent); border-radius: 4px; transition: width .8s cubic-bezier(.4,0,.2,1); }
+.sys-rate { font-family: var(--mono); font-size: 13px; width: 50px; text-align: right; flex-shrink: 0; }
+
+/* ── 表格 ── */
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { padding: 10px 14px; text-align: left; font-size: 10px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.data-table td { padding: 11px 14px; border-bottom: 1px solid rgba(42,45,58,.6); font-size: 13px; vertical-align: middle; }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: rgba(79,142,247,.04); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: var(--mono); }
+.badge-ok   { background: rgba(52,211,153,.12); color: var(--accent2); }
+.badge-warn { background: rgba(248,113,113,.12); color: var(--warn); }
+.badge-sys  { background: rgba(79,142,247,.12); color: var(--accent); }
+
+/* ── 篩選 ── */
+.filter-row { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.filter-select, .filter-input { padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--sans); font-size: 13px; outline: none; transition: border-color .2s; }
+.filter-select:focus, .filter-input:focus { border-color: var(--accent); }
+.filter-input { flex: 1; min-width: 160px; }
+
+/* ── 表單 ── */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.form-group label { display: block; font-size: 11px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+.form-group select, .form-group input, .form-group textarea { width: 100%; padding: 9px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--sans); font-size: 13px; outline: none; transition: border-color .2s; }
+.form-group select:focus, .form-group input:focus, .form-group textarea:focus { border-color: var(--accent); }
+.form-group textarea { resize: vertical; min-height: 72px; }
+.btn-add { padding: 10px 24px; background: var(--accent2); border: none; border-radius: 6px; color: #0f1117; font-family: var(--sans); font-weight: 500; font-size: 13px; cursor: pointer; transition: opacity .2s; }
+.btn-add:hover { opacity: .85; }
+.btn-add:disabled { opacity: .4; cursor: not-allowed; }
+.btn-del { padding: 4px 10px; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); font-size: 11px; cursor: pointer; transition: all .15s; }
+.btn-del:hover { border-color: var(--warn); color: var(--warn); }
+
+/* ── 老師卡片 ── */
+.teacher-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.teacher-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; transition: border-color .2s; }
+.teacher-card:hover { border-color: var(--accent); }
+.tc-name { font-size: 16px; font-weight: 500; margin-bottom: 4px; }
+.tc-rate { font-family: var(--mono); font-size: 28px; font-weight: 500; color: var(--accent); margin-bottom: 12px; }
+.tc-rate.warn { color: var(--warn); }
+.tc-history { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.tc-hist-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px; }
+.tc-hist-term { color: var(--muted); font-family: var(--mono); }
+.tc-hist-rate { font-family: var(--mono); }
+
+/* ── 載入/空白 ── */
+.loading { display: flex; align-items: center; justify-content: center; padding: 60px; color: var(--muted); font-size: 13px; gap: 10px; }
+.spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+.empty-state-icon { font-size: 32px; margin-bottom: 12px; }
+
+/* ── Toast ── */
+#toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; font-size: 13px; transition: transform .3s cubic-bezier(.4,0,.2,1); z-index: 999; white-space: nowrap; }
+#toast.show { transform: translateX(-50%) translateY(0); }
+#toast.ok  { border-color: var(--accent2); color: var(--accent2); }
+#toast.err { border-color: var(--warn);   color: var(--warn); }
+
+/* ── 手機 ── */
+@media (max-width: 600px) {
+  .topbar { padding: 0 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 8px; }
+  .topbar-nav { gap: 2px; }
+  .nav-btn { padding: 6px 10px; font-size: 12px; }
+  .page { padding: 16px 12px; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .kpi-value { font-size: 28px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .teacher-grid { grid-template-columns: 1fr; }
+  .filter-row { flex-direction: column; }
+  .filter-input, .filter-select { width: 100%; }
+  .data-table { font-size: 12px; }
+  .data-table th, .data-table td { padding: 8px 10px; }
+  .overview-grid { grid-template-columns: 1fr !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- 登入 -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">NewCore</div>
+    <div class="login-title">續讀分析系統</div>
+    <div class="login-sub">Retention Analytics Dashboard</div>
+    <div class="field-label">系統密碼</div>
+    <input type="password" id="pw-input" class="field-input" placeholder="請輸入密碼" autocomplete="current-password">
+    <button class="btn-primary" id="login-btn" onclick="doLogin()">登入</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-brand">NewCore</div>
+    <div class="topbar-term" id="term-badge">— —</div>
+    <div class="topbar-role" id="role-badge"></div>
+    <nav class="topbar-nav">
+      <button class="nav-btn active" onclick="showPage('overview',this)">🏠 總覽</button>
+      <button class="nav-btn"        onclick="showPage('classes',this)">📋 班級</button>
+      <button class="nav-btn"        onclick="showPage('loss',this)">📝 流失</button>
+      <button class="nav-btn"        onclick="showPage('teachers',this)">👥 老師</button>
+    </nav>
+    <button class="logout-btn" onclick="doLogout()">登出</button>
+  </div>
+
+  <!-- 總覽 -->
+  <div class="page active" id="page-overview">
+    <div class="kpi-grid" id="kpi-grid">
+      <div class="loading"><div class="spinner"></div> 載入中...</div>
+    </div>
+    <div class="overview-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div class="card">
+        <div class="card-title">體系回收率</div>
+        <div id="sys-chart"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">⚠️ 需關懷班級</div>
+        <div id="care-list"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 班級 -->
+  <div class="page" id="page-classes">
+    <div class="filter-row">
+      <input  class="filter-input"  id="cls-search"         placeholder="搜尋班級名稱..." oninput="renderClasses()">
+      <select class="filter-select" id="cls-sys-filter"     onchange="renderClasses()"><option value="">所有體系</option></select>
+      <select class="filter-select" id="cls-teacher-filter" onchange="renderClasses()"><option value="">所有老師</option></select>
+      <select class="filter-select" id="cls-status-filter"  onchange="renderClasses()">
+        <option value="">所有狀態</option>
+        <option value="需關懷">⚠️ 需關懷</option>
+        <option value="正常">✅ 正常</option>
+      </select>
+    </div>
+    <div class="card" style="overflow-x:auto;">
+      <div id="classes-table-wrap"><div class="loading"><div class="spinner"></div> 載入中...</div></div>
+    </div>
+  </div>
+
+  <!-- 流失 -->
+  <div class="page" id="page-loss">
+    <div class="card">
+      <div class="card-title">新增流失紀錄</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>班級</label>
+          <select id="loss-class" onchange="onClassChange()"><option value="">請選擇班級</option></select>
+        </div>
+        <div class="form-group">
+          <label>學生姓名</label>
+          <input type="text" id="loss-name" placeholder="王小明">
+        </div>
+        <div class="form-group">
+          <label>學校／年級</label>
+          <input type="text" id="loss-school" placeholder="雙永國小,三年級">
+        </div>
+        <div class="form-group">
+          <label>中籍老師</label>
+          <input type="text" id="loss-local-t" placeholder="自動帶入" readonly style="opacity:.6">
+        </div>
+        <div class="form-group">
+          <label>外籍老師</label>
+          <input type="text" id="loss-foreign-t" placeholder="自動帶入" readonly style="opacity:.6">
+        </div>
+        <div class="form-group">
+          <label>流失原因</label>
+          <select id="loss-reason">
+            <option value="">請選擇</option>
+            <option>升國中(小六)</option>
+            <option>學習成效</option>
+            <option>其他</option>
+            <option>轉同業</option>
+            <option>程度不符</option>
+            <option>轉安親班</option>
+            <option>國中課業繁忙</option>
+            <option>搬家</option>
+            <option>時間衝突</option>
+            <option>學費考量</option>
+            <option>老師因素</option>
+            <option>個人/家庭因素</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>詳細備註</label>
+          <textarea id="loss-note" placeholder="補充說明..."></textarea>
+        </div>
+      </div>
+      <button class="btn-add" id="add-loss-btn" onclick="addLossRecord()">＋ 新增紀錄</button>
+    </div>
+
+    <div class="filter-row">
+      <input  class="filter-input"  id="loss-search"        placeholder="搜尋學生或班級..." oninput="renderLossRecords()">
+      <select class="filter-select" id="loss-cls-filter"    onchange="renderLossRecords()"><option value="">所有班級</option></select>
+      <select class="filter-select" id="loss-reason-filter" onchange="renderLossRecords()"><option value="">所有原因</option></select>
+    </div>
+    <div class="card" style="overflow-x:auto;">
+      <div id="loss-table-wrap"><div class="loading"><div class="spinner"></div> 載入中...</div></div>
+    </div>
+  </div>
+
+  <!-- 老師 -->
+  <div class="page" id="page-teachers">
+    <div id="teacher-grid-wrap"><div class="loading"><div class="spinner"></div> 載入中...</div></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══ 設定 ══
+const GAS_URL = 'https://script.google.com/macros/s/YOUR_RETENTION_GAS_DEPLOY_ID/exec';
+// ↑ 換成你的續讀 GAS 部署網址
+
+// ══ 狀態 ══
+let _pw = '', _role = '', _classes = [], _loss = [], _teachers = [], _term = '';
+
+// ══ JSONP ══
+function callGAS(params) {
+  return new Promise(function(resolve, reject) {
+    const cb = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const sc = document.createElement('script');
+    window[cb] = function(data) { resolve(data); delete window[cb]; sc.remove(); };
+    const qs = Object.entries(Object.assign({}, params, { callback: cb }))
+      .map(function(kv) { return kv[0] + '=' + encodeURIComponent(kv[1]); }).join('&');
+    sc.src = GAS_URL + '?' + qs;
+    sc.onerror = function() { reject(new Error('網路錯誤')); };
+    document.body.appendChild(sc);
+  });
+}
+
+async function postGAS(payload) {
+  const res = await fetch(GAS_URL, {
+    method: 'POST', redirect: 'follow',
+    body: JSON.stringify(Object.assign({}, payload, { password: _pw })),
+  });
+  return await res.json();
+}
+
+// ══ 登入 ══
+document.getElementById('pw-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doLogin();
+});
+
+async function doLogin() {
+  const pw  = document.getElementById('pw-input').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  if (!pw) return;
+  btn.disabled = true; btn.textContent = '驗證中...'; err.style.display = 'none';
+  try {
+    const res = await callGAS({ action: 'verifyPassword', password: pw });
+    if (res.ok) {
+      _pw   = pw;
+      _role = res.role;
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      // 顯示身份
+      const rb = document.getElementById('role-badge');
+      if (_role === 'super') {
+        rb.textContent = '⭐ Super Admin';
+        rb.className   = 'topbar-role role-super';
+      } else {
+        rb.textContent = '管理員';
+        rb.className   = 'topbar-role role-admin';
+      }
+      loadAllData();
+    } else {
+      err.textContent = res.error || '密碼錯誤';
+      err.style.display = 'block';
+    }
+  } catch(e) {
+    err.textContent = '連線失敗，請確認 GAS 已部署';
+    err.style.display = 'block';
+  }
+  btn.disabled = false; btn.textContent = '登入';
+}
+
+function doLogout() {
+  _pw = ''; _role = ''; _classes = []; _loss = []; _teachers = [];
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('pw-input').value = '';
+  document.getElementById('role-badge').textContent = '';
+}
+
+// ══ 頁籤 ══
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.nav-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById('page-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+// ══ 載入資料 ══
+async function loadAllData() {
+  try {
+    const [mainRes, summaryRes, lossRes, teacherRes] = await Promise.all([
+      callGAS({ action: 'getMainData',         password: _pw }),
+      callGAS({ action: 'getRetentionSummary', password: _pw }),
+      callGAS({ action: 'getLossRecords',      password: _pw }),
+      callGAS({ action: 'getTeacherStats',     password: _pw }),
+    ]);
+
+    if (mainRes.ok) {
+      _classes = mainRes.classes;
+      _term    = mainRes.term;
+      document.getElementById('term-badge').textContent = _term || '—';
+      initClassFilters();
+      renderClasses();
+      initLossForm();
+    }
+
+    if (summaryRes.ok) renderOverview(summaryRes);
+
+    if (lossRes.ok) {
+      _loss = lossRes.records;
+      initLossFilters();
+      renderLossRecords();
+    }
+
+    if (teacherRes.ok) {
+      _teachers = teacherRes.teachers;
+      renderTeachers();
+    }
+  } catch(e) {
+    showToast('載入失敗：' + e.message, 'err');
+  }
+}
+
+// ══ 總覽 ══
+function renderOverview(data) {
+  document.getElementById('kpi-grid').innerHTML =
+    kpiCard('blue',  '全校回收率',  data.overall !== null ? data.overall + '%' : '—', data.grandTotal + ' 人中 ' + (data.grandTotal - data.grandLost) + ' 人回收') +
+    kpiCard(data.needCare.length > 0 ? 'red' : 'green', '需關懷班級', data.needCare.length, data.needCare.length > 0 ? '回收率低於 80%' : '全部正常') +
+    kpiCard('amber', '總班級數', _classes.length, '當季 ' + _term) +
+    kpiCard('green', '流失人數', data.grandLost, '本季累計');
+
+  const sysChart = document.getElementById('sys-chart');
+  sysChart.innerHTML = data.bySystem.length === 0
+    ? '<div class="empty-state"><div class="empty-state-icon">📊</div><p>尚無體系資料</p></div>'
+    : data.bySystem.map(function(s) {
+        return '<div class="sys-row">' +
+          '<div class="sys-name">' + s.system + '</div>' +
+          '<div class="sys-bar-wrap"><div class="sys-bar" style="width:' + (s.rate || 0) + '%"></div></div>' +
+          '<div class="sys-rate" style="color:' + ((s.rate||0) < 80 ? 'var(--warn)' : 'var(--text)') + '">' + (s.rate !== null ? s.rate + '%' : '—') + '</div>' +
+          '</div>';
+      }).join('');
+
+  const careList = document.getElementById('care-list');
+  careList.innerHTML = data.needCare.length === 0
+    ? '<div class="empty-state"><div class="empty-state-icon">✅</div><p>目前所有班級均正常</p></div>'
+    : data.needCare.map(function(name) {
+        return '<div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;align-items:center;gap:8px;"><span style="color:var(--warn)">▲</span>' + name + '</div>';
+      }).join('');
+}
+
+function kpiCard(cls, label, value, sub) {
+  return '<div class="kpi-card ' + cls + '"><div class="kpi-label">' + label + '</div><div class="kpi-value">' + value + '</div><div class="kpi-sub">' + sub + '</div></div>';
+}
+
+// ══ 班級 ══
+function initClassFilters() {
+  const sysSet     = new Set(_classes.map(function(c) { return c.system; }).filter(Boolean));
+  const teacherSet = new Set(_classes.flatMap(function(c) { return [c.localT, c.foreignT]; }).filter(Boolean));
+
+  document.getElementById('cls-sys-filter').innerHTML =
+    '<option value="">所有體系</option>' + Array.from(sysSet).sort().map(function(s) { return '<option>' + s + '</option>'; }).join('');
+  document.getElementById('cls-teacher-filter').innerHTML =
+    '<option value="">所有老師</option>' + Array.from(teacherSet).sort().map(function(t) { return '<option>' + t + '</option>'; }).join('');
+}
+
+function renderClasses() {
+  const search  = document.getElementById('cls-search').value.toLowerCase();
+  const sys     = document.getElementById('cls-sys-filter').value;
+  const teacher = document.getElementById('cls-teacher-filter').value;
+  const status  = document.getElementById('cls-status-filter').value;
+
+  const filtered = _classes.filter(function(c) {
+    if (search  && !c.className.toLowerCase().includes(search)) return false;
+    if (sys     && c.system !== sys) return false;
+    if (teacher && c.localT !== teacher && c.foreignT !== teacher) return false;
+    if (status  && !c.status.includes(status)) return false;
+    return true;
+  });
+
+  const wrap = document.getElementById('classes-table-wrap');
+  if (!filtered.length) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔍</div><p>沒有符合條件的班級</p></div>';
+    return;
+  }
+
+  wrap.innerHTML = '<table class="data-table"><thead><tr>' +
+    '<th>班級名稱</th><th>體系</th><th>中師</th><th>外師</th><th>結束日期</th><th>人數</th><th>流失</th><th>回收率</th><th>狀態</th>' +
+    '</tr></thead><tbody>' +
+    filtered.map(function(c) {
+      return '<tr>' +
+        '<td style="font-family:var(--mono);font-size:12px">' + c.className + '</td>' +
+        '<td><span class="badge badge-sys">' + (c.system || '—') + '</span></td>' +
+        '<td>' + (c.localT   || '—') + '</td>' +
+        '<td>' + (c.foreignT || '—') + '</td>' +
+        '<td style="font-family:var(--mono);font-size:12px">' + (c.endDate || '—') + '</td>' +
+        '<td style="text-align:right">' + c.total + '</td>' +
+        '<td style="text-align:right;color:' + (c.lost > 0 ? 'var(--warn)' : 'var(--muted)') + '">' + c.lost + '</td>' +
+        '<td style="font-family:var(--mono);color:' + ((c.rate||0) < 80 ? 'var(--warn)' : 'var(--accent2)') + '">' + (c.rate !== null ? c.rate + '%' : '—') + '</td>' +
+        '<td><span class="badge ' + (c.status.includes('需關懷') ? 'badge-warn' : 'badge-ok') + '">' + (c.status || '—') + '</span></td>' +
+        '</tr>';
+    }).join('') +
+    '</tbody></table>' +
+    '<div style="padding:12px 0 0;font-size:11px;color:var(--muted)">顯示 ' + filtered.length + ' / ' + _classes.length + ' 班（依結束日期排列）</div>';
+}
+
+// ══ 流失 ══
+function initLossForm() {
+  const sel = document.getElementById('loss-class');
+  // 班級選單依結束日排序（_classes 已排序）
+  sel.innerHTML = '<option value="">請選擇班級</option>' +
+    _classes.map(function(c) { return '<option value="' + c.className + '">' + c.className + (c.endDate ? ' (' + c.endDate + ')' : '') + '</option>'; }).join('');
+}
+
+function onClassChange() {
+  const cls = _classes.find(function(c) { return c.className === document.getElementById('loss-class').value; });
+  document.getElementById('loss-local-t').value   = cls ? cls.localT   : '';
+  document.getElementById('loss-foreign-t').value = cls ? cls.foreignT : '';
+}
+
+function initLossFilters() {
+  const clsSet    = new Set(_loss.map(function(r) { return r.className; }).filter(Boolean));
+  const reasonSet = new Set(_loss.map(function(r) { return r.reason;    }).filter(Boolean));
+  document.getElementById('loss-cls-filter').innerHTML =
+    '<option value="">所有班級</option>' + Array.from(clsSet).sort().map(function(c) { return '<option>' + c + '</option>'; }).join('');
+  document.getElementById('loss-reason-filter').innerHTML =
+    '<option value="">所有原因</option>' + Array.from(reasonSet).sort().map(function(r) { return '<option>' + r + '</option>'; }).join('');
+}
+
+function renderLossRecords() {
+  const search = document.getElementById('loss-search').value.toLowerCase();
+  const cls    = document.getElementById('loss-cls-filter').value;
+  const reason = document.getElementById('loss-reason-filter').value;
+
+  const filtered = _loss.filter(function(r) {
+    if (search && !r.studentName.toLowerCase().includes(search) && !r.className.toLowerCase().includes(search)) return false;
+    if (cls    && r.className !== cls)    return false;
+    if (reason && r.reason    !== reason) return false;
+    return true;
+  });
+
+  const wrap = document.getElementById('loss-table-wrap');
+  if (!filtered.length) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><p>目前沒有流失紀錄</p></div>';
+    return;
+  }
+
+  wrap.innerHTML = '<table class="data-table"><thead><tr>' +
+    '<th>#</th><th>學生</th><th>班級</th><th>中師</th><th>外師</th><th>學校/年級</th><th>原因</th><th>備註</th><th></th>' +
+    '</tr></thead><tbody>' +
+    filtered.map(function(r) {
+      return '<tr>' +
+        '<td style="font-family:var(--mono);font-size:11px;color:var(--muted)">' + r.seq + '</td>' +
+        '<td>' + r.studentName + '</td>' +
+        '<td style="font-family:var(--mono);font-size:12px">' + r.className + '</td>' +
+        '<td>' + (r.localT   || '—') + '</td>' +
+        '<td>' + (r.foreignT || '—') + '</td>' +
+        '<td style="color:var(--muted)">' + (r.school || '—') + '</td>' +
+        '<td><span class="badge" style="background:rgba(251,191,36,.1);color:var(--amber)">' + (r.reason || '—') + '</span></td>' +
+        '<td style="color:var(--muted);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.note || '') + '</td>' +
+        '<td><button class="btn-del" onclick="deleteLoss(' + r.rowIndex + ',this)">刪除</button></td>' +
+        '</tr>';
+    }).join('') +
+    '</tbody></table>' +
+    '<div style="padding:12px 0 0;font-size:11px;color:var(--muted)">共 ' + filtered.length + ' 筆（依序號降冪）</div>';
+}
+
+async function addLossRecord() {
+  const btn    = document.getElementById('add-loss-btn');
+  const record = {
+    studentName : document.getElementById('loss-name').value.trim(),
+    className   : document.getElementById('loss-class').value,
+    localT      : document.getElementById('loss-local-t').value,
+    foreignT    : document.getElementById('loss-foreign-t').value,
+    school      : document.getElementById('loss-school').value.trim(),
+    reason      : document.getElementById('loss-reason').value,
+    note        : document.getElementById('loss-note').value.trim(),
+  };
+
+  if (!record.className)   return showToast('請選擇班級', 'err');
+  if (!record.studentName) return showToast('請填寫學生姓名', 'err');
+  if (!record.reason)      return showToast('請選擇流失原因', 'err');
+
+  btn.disabled = true; btn.textContent = '新增中...';
+  try {
+    const res = await postGAS({ action: 'addLossRecord', record: record });
+    if (res.ok) {
+      showToast('✅ 已新增流失紀錄 #' + res.seq, 'ok');
+      const lossRes = await callGAS({ action: 'getLossRecords', password: _pw });
+      if (lossRes.ok) { _loss = lossRes.records; initLossFilters(); renderLossRecords(); }
+      document.getElementById('loss-name').value   = '';
+      document.getElementById('loss-school').value = '';
+      document.getElementById('loss-note').value   = '';
+      document.getElementById('loss-class').value  = '';
+      document.getElementById('loss-reason').value = '';
+      document.getElementById('loss-local-t').value   = '';
+      document.getElementById('loss-foreign-t').value = '';
+    } else {
+      showToast(res.error || '新增失敗', 'err');
+    }
+  } catch(e) { showToast('連線失敗', 'err'); }
+  btn.disabled = false; btn.textContent = '＋ 新增紀錄';
+}
+
+async function deleteLoss(rowIndex, btnEl) {
+  if (!confirm('確定刪除這筆流失紀錄？')) return;
+  btnEl.disabled = true;
+  try {
+    const res = await postGAS({ action: 'deleteLossRecord', rowIndex: rowIndex });
+    if (res.ok) {
+      showToast('已刪除', 'ok');
+      const lossRes = await callGAS({ action: 'getLossRecords', password: _pw });
+      if (lossRes.ok) { _loss = lossRes.records; initLossFilters(); renderLossRecords(); }
+    } else {
+      showToast(res.error || '刪除失敗', 'err');
+      btnEl.disabled = false;
+    }
+  } catch(e) { showToast('連線失敗', 'err'); btnEl.disabled = false; }
+}
+
+// ══ 老師 ══
+function renderTeachers() {
+  const wrap = document.getElementById('teacher-grid-wrap');
+  if (!_teachers.length) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><p>尚無老師資料</p></div>';
+    return;
+  }
+
+  wrap.innerHTML = '<div class="teacher-grid">' + _teachers.map(function(t) {
+    const rate    = t.currentRate;
+    const rateStr = rate !== null ? rate + '%' : '—';
+    const isWarn  = rate !== null && rate < 80;
+    const histTerms = Object.keys(t.history).sort();
+
+    const histHTML = histTerms.length === 0
+      ? '<div style="color:var(--muted);font-size:12px">尚無歷史資料</div>'
+      : histTerms.map(function(term) {
+          const d = t.history[term];
+          const r = d.rate !== null ? d.rate + '%' : '—';
+          return '<div class="tc-hist-row">' +
+            '<span class="tc-hist-term">' + term + '</span>' +
+            '<span class="tc-hist-rate" style="color:' + ((d.rate||0) < 80 ? 'var(--warn)' : 'var(--accent2)') + '">' + r + '</span>' +
+            '<span style="font-size:11px;color:var(--muted)">' + d.classCount + '班 流失' + d.lostCount + '人</span>' +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--muted);padding:2px 0 6px;line-height:1.6">' + d.classes.join('、') + '</div>';
+        }).join('');
+
+    return '<div class="teacher-card">' +
+      '<div class="tc-name">' + t.name + '</div>' +
+      '<div class="tc-rate' + (isWarn ? ' warn' : '') + '">' + rateStr + '</div>' +
+      '<div style="font-size:11px;color:var(--muted)">當季帶班：' + t.currentClasses.length + ' 班' +
+        (t.currentClasses.length ? '<br><span style="line-height:1.8">' + t.currentClasses.join('、') + '</span>' : '') +
+      '</div>' +
+      (histTerms.length > 0 ? '<div class="tc-history"><div style="font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:8px">歷史足跡</div>' + histHTML + '</div>' : '') +
+      '</div>';
+  }).join('') + '</div>';
+}
+
+// ══ Toast ══
+let _toastTimer;
+function showToast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = 'show ' + (type || 'ok');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function() { el.className = ''; }, 3000);
+}
+</script>
+</body>
+</html>
